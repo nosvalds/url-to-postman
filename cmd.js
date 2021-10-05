@@ -3,15 +3,17 @@
 import minimist from "minimist";
 import commist from "commist";
 import fs from "fs/promises";
+import path from "path";
 
 const usage = (msg = "URL to Postman CLI Tool") => {
   console.log(` \n${msg}\n `);
   console.log("url-to-postman:");
   console.log(
     `convert: url-to-postman <path> - path to input file (newline delimited list of urls)
+        --name=<name> - req - name of collection
         --host=<host> - opt - override host (e.g. with a variable)
-        --name=<name> - opt - name of collection
-        --output=<path> - opt - output of Postman JSON
+        --outpath=<path> - opt - output path of Postman JSON
+        --split=<int> - opt - number of requests per collection, before splitting
         `
   );
 };
@@ -26,7 +28,7 @@ if (noMatches) {
 
 async function urlToPostman(argv) {
   const args = minimist(argv, {
-    string: ["output", "name", "host"],
+    string: ["outpath", "name", "host", "split"],
   });
   if (args._.length < 1) {
     usage();
@@ -34,7 +36,7 @@ async function urlToPostman(argv) {
   }
 
   const [filePath] = args._;
-  const { output, name, host } = args;
+  const { outpath, name, host, split } = args;
 
   let urlList;
   try {
@@ -46,29 +48,46 @@ async function urlToPostman(argv) {
     process.exit(1);
   }
 
-  let postmanJSON;
+  let urlLists = [];
+  if (split) {
+    while (urlList.length > 0) {
+      urlLists.push(urlList.splice(0, split));
+    }
+  } else {
+    urlLists = [urlList];
+  }
+  let postmanJSONs;
   try {
-    const item = urlList.map((url) => urlToItem(url, host))
-    postmanJSON = {
-      info: {
-        name,
-        schema:
-          "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-      },
-      item,
-    };
+    postmanJSONs = urlLists.map((urlList, i) => {
+      const item = urlList.map((url) => urlToItem(url, host));
+      return {
+        info: {
+          name: split ? `${name}-${i + 1}` : name,
+          schema:
+            "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        },
+        item,
+      };
+    });
   } catch (error) {
     console.error(`Error generating Postman JSON: ${error.message}`, error);
     process.exit(1);
   }
 
   try {
-      if (output) {
-        await fs.writeFile(output, JSON.stringify(postmanJSON, "", 4));
-        console.log(`Output saved to ${output}`);
-      } else {
+    if (outpath) {
+      postmanJSONs.forEach(async (postmanJSON, i) => {
+        await fs.writeFile(
+          path.join(outpath, `${split ? `${name}-${i + 1}` : name}.postman_collection.json`),
+          JSON.stringify(postmanJSON, "", 4)
+        );
+      });
+      console.log(`Output saved to ${outpath}`);
+    } else {
+      postmanJSONs.forEach((postmanJSON, i) => {
         console.log(postmanJSON);
-      }
+      });
+    }
   } catch (error) {
     console.error(`Error outputting Postman JSON: ${error.message}`);
     process.exit(1);
@@ -85,8 +104,8 @@ function urlToItem(url, host) {
   item.request.url.raw = url;
   const doubleSlashSplit = url.split("//");
   const singleSlashSplit = doubleSlashSplit[1].split("/");
-  const parsedHost = doubleSlashSplit[0] + "//" + singleSlashSplit.shift()
-  item.request.url.host = host ? host : parsedHost ;
+  const parsedHost = doubleSlashSplit[0] + "//" + singleSlashSplit.shift();
+  item.request.url.host = host ? host : parsedHost;
   const querySplit = singleSlashSplit.pop().split("?");
   singleSlashSplit.push(querySplit[0]);
   item.request.url.path = singleSlashSplit;
@@ -97,14 +116,14 @@ function urlToItem(url, host) {
 }
 
 function parseQueryParams(queryString) {
-    if (queryString) {
-        return queryString.split("&").map((query) => {
-          const split = query.split("=");
-          return {
-            key: split[0],
-            value: split[1],
-          };
-        });
-    }
-    return {}
+  if (queryString) {
+    return queryString.split("&").map((query) => {
+      const split = query.split("=");
+      return {
+        key: split[0],
+        value: split[1],
+      };
+    });
+  }
+  return {};
 }
