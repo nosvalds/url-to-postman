@@ -49,7 +49,6 @@ async function urlToPostman(argv) {
   let postmanJSON;
   try {
     const item = urlList.map((url) => urlToItem(url, host))
-    console.log(item)
     postmanJSON = {
       info: {
         name,
@@ -59,7 +58,7 @@ async function urlToPostman(argv) {
       item,
     };
   } catch (error) {
-    console.error(`Error generating Postman JSON ${error.message}`);
+    console.error(`Error generating Postman JSON: ${error.message}`, error);
     process.exit(1);
   }
 
@@ -71,7 +70,7 @@ async function urlToPostman(argv) {
         console.log(postmanJSON);
       }
   } catch (error) {
-    console.error(`Error outputting Postman JSON ${error.message}`);
+    console.error(`Error outputting Postman JSON: ${error.message}`);
     process.exit(1);
   }
 }
@@ -98,11 +97,14 @@ function urlToItem(url, host) {
 }
 
 function parseQueryParams(queryString) {
-  return queryString.split("&").map((query) => {
-    const split = query.split("=");
-    return {
-      key: split[0],
-      value: split[1],
-    };
-  });
+    if (queryString) {
+        return queryString.split("&").map((query) => {
+          const split = query.split("=");
+          return {
+            key: split[0],
+            value: split[1],
+          };
+        });
+    }
+    return {}
 }
